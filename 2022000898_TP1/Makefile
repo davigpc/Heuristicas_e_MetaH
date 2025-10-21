@@ -6,7 +6,7 @@ TARGET = bin/$(TARGET_NAME)
 CXX = g++
 # -Iinclude tells the compiler to look for headers in the include/ directory
 # -O3 is optimization level 3
-CXXFLAGS = -std=c++11 -Wall -O3 -Iinclude
+CXXFLAGS = -std=c++17 -Wall -O3 -Iinclude
 
 # Diretórios
 SRC_DIR = src

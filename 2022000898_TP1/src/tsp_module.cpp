@@ -292,20 +292,36 @@ void executar_testes_tsp(const string& nome_arquivo) {
     vector<cidade> cidades = ler_arquivo_tsp(nome_arquivo);
     if (cidades.empty()) return;
 
+     // Extrair nome base para arquivos CSV
+    string nome_base_arquivo = nome_arquivo;
+    size_t last_slash = nome_base_arquivo.find_last_of("/\\");
+    if (last_slash != string::npos) {
+        nome_base_arquivo = nome_base_arquivo.substr(last_slash + 1);
+    }
+    size_t last_dot = nome_base_arquivo.find_last_of(".");
+    if (last_dot != string::npos) {
+        nome_base_arquivo = nome_base_arquivo.substr(0, last_dot);
+    }
+
     cout << "\n=============================================" << endl;
     cout << "EXECUTANDO TESTES PARA O TSP (Instancia: " << nome_arquivo << ")" << endl;
     cout << "=============================================\n" << endl;
 
     const int NUM_EXECUCOES = 10;
+    const string METRICA = "Custo"; 
 
     // --- 1. Testes do Simulated Annealing ---
     cout << "--- 1. Simulated Annealing (TSP) ---" << endl;
     vector<pair<string, pair<double, double>>> configs_sa = {
-        {"Temp: 10000.0, Taxa: 0.995", {10000.0, 0.995}},
-        {"Temp: 20000.0, Taxa: 0.99", {20000.0, 0.99}}
+        {"Temp_10000_Taxa_0995", {10000.0, 0.995}},
+        {"Temp_20000_Taxa_099", {20000.0, 0.99}}
     };
 
-    for (auto const& config : configs_sa) {
+    for (int config_idx = 0; config_idx < configs_sa.size(); ++config_idx) {
+        auto const& config = configs_sa[config_idx];
+        string nome_csv_sa = nome_base_arquivo + "_tsp_SA_" + config.first + ".csv";
+        ofstream arquivo_csv_sa = abrir_csv(nome_csv_sa, {"Execucao", "Custo", "Tempo_s"});
+
         vector<double> resultados;
         vector<double> tempos;
         for (int i = 0; i < NUM_EXECUCOES; ++i) {
@@ -315,37 +331,65 @@ void executar_testes_tsp(const string& nome_arquivo) {
             duration<double> duracao = fim - inicio;
             resultados.push_back(custo);
             tempos.push_back(duracao.count());
+
+             if (arquivo_csv_sa.is_open()) {
+                 escrever_linha_csv(arquivo_csv_sa, i + 1, custo, duracao.count());
+             }
         }
-        double melhor = *min_element(resultados.begin(), resultados.end());
-        double pior = *max_element(resultados.begin(), resultados.end());
+        if (arquivo_csv_sa.is_open()) arquivo_csv_sa.close();
+
+        double melhor = *min_element(resultados.begin(), resultados.end()); 
+        double pior = *max_element(resultados.begin(), resultados.end());   
         double media = accumulate(resultados.begin(), resultados.end(), 0.0) / NUM_EXECUCOES;
         double tempo_medio = accumulate(tempos.begin(), tempos.end(), 0.0) / NUM_EXECUCOES;
-        imprimir_tabela_estocastica(config.first, {melhor, pior, media, tempo_medio});
+
+        string config_nome_imprimir = config.first;
+        replace(config_nome_imprimir.begin(), config_nome_imprimir.end(), '_', ' ');
+        replace(config_nome_imprimir.begin(), config_nome_imprimir.end(), ':', ' ');
+        imprimir_tabela_estocastica(config_nome_imprimir, {melhor, pior, media, tempo_medio}, METRICA);
     }
 
     // --- 2. Testes da Busca Tabu ---
     cout << "\n--- 2. Busca Tabu (TSP) ---" << endl;
     vector<pair<string, pair<int, int>>> configs_ts = {
-        {"Duracao Tabu: 7, Iter s/ melhora: 100", {7, 100}},
-        {"Duracao Tabu: 15, Iter s/ melhora: 200", {15, 200}}
+        {"Duracao_7_Iter_100", {7, 100}},
+        {"Duracao_15_Iter_200", {15, 200}}
     };
 
     for (auto const& config : configs_ts) {
+        string nome_csv_ts = nome_base_arquivo + "_tsp_TS_" + config.first + ".csv";
+        ofstream arquivo_csv_ts = abrir_csv(nome_csv_ts, {"Custo_Final", "Tempo_s"});
+
         auto inicio = high_resolution_clock::now();
         double custo = busca_tabu_tsp(cidades, config.second.first, config.second.second);
         auto fim = high_resolution_clock::now();
         duration<double> duracao = fim - inicio;
-        imprimir_tabela_deterministica(config.first, {custo, duracao.count()});
+
+
+        if (arquivo_csv_ts.is_open()) {
+            escrever_linha_csv(arquivo_csv_ts, custo, duracao.count());
+            arquivo_csv_ts.close(); 
+        }
+
+
+        string config_nome_imprimir = config.first;
+        replace(config_nome_imprimir.begin(), config_nome_imprimir.end(), '_', ' ');
+        replace(config_nome_imprimir.begin(), config_nome_imprimir.end(), ':', ' ');
+        imprimir_tabela_deterministica(config_nome_imprimir, {custo, duracao.count()}, METRICA);
     }
 
     // --- 3. Testes do GRASP ---
     cout << "\n--- 3. GRASP (TSP) ---" << endl;
     vector<pair<string, pair<double, int>>> configs_grasp = {
-        {"Alpha: 0.3, Iter GRASP: 50", {0.3, 50}},
-        {"Alpha: 0.5, Iter GRASP: 100", {0.5, 100}}
+        {"Alpha_03_Iter_50", {0.3, 50}},
+        {"Alpha_05_Iter_100", {0.5, 100}}
     };
 
-    for (auto const& config : configs_grasp) {
+    for (int config_idx = 0; config_idx < configs_grasp.size(); ++config_idx) {
+         auto const& config = configs_grasp[config_idx];
+         string nome_csv_grasp = nome_base_arquivo + "_tsp_GRASP_" + config.first + ".csv";
+         ofstream arquivo_csv_grasp = abrir_csv(nome_csv_grasp, {"Execucao", "Custo", "Tempo_s"});
+
         vector<double> resultados;
         vector<double> tempos;
         for (int i = 0; i < NUM_EXECUCOES; ++i) {
@@ -355,11 +399,19 @@ void executar_testes_tsp(const string& nome_arquivo) {
             duration<double> duracao = fim - inicio;
             resultados.push_back(custo);
             tempos.push_back(duracao.count());
+            if (arquivo_csv_grasp.is_open()) {
+                 escrever_linha_csv(arquivo_csv_grasp, i + 1, custo, duracao.count());
+            }
         }
-        double melhor = *min_element(resultados.begin(), resultados.end());
-        double pior = *max_element(resultados.begin(), resultados.end());
+         if (arquivo_csv_grasp.is_open()) arquivo_csv_grasp.close(); 
+
+        double melhor = *min_element(resultados.begin(), resultados.end()); 
+        double pior = *max_element(resultados.begin(), resultados.end());  
         double media = accumulate(resultados.begin(), resultados.end(), 0.0) / NUM_EXECUCOES;
         double tempo_medio = accumulate(tempos.begin(), tempos.end(), 0.0) / NUM_EXECUCOES;
-        imprimir_tabela_estocastica(config.first, {melhor, pior, media, tempo_medio});
+        string config_nome_imprimir = config.first;
+        replace(config_nome_imprimir.begin(), config_nome_imprimir.end(), '_', ' ');
+        replace(config_nome_imprimir.begin(), config_nome_imprimir.end(), ':', ' ');
+        imprimir_tabela_estocastica(config_nome_imprimir, {melhor, pior, media, tempo_medio}, METRICA);
     }
 }

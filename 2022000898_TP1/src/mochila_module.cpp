@@ -53,17 +53,17 @@ static pair<int, int> avaliar_solucao(const vector<int>& solucao, const vector<I
     return {valor_total, peso_total};
 }
 
-static vector<int> gerar_solucao_aleatoria_mochila(size_t num_itens) 
-{
-    vector<int> solucao(num_itens);
-    random_device rd;
-    mt19937 gen(rd());
-    uniform_int_distribution<> dis(0, 1);
-    for(size_t i = 0; i < num_itens; ++i) { 
-        solucao[i] = dis(gen);
-    }
-    return solucao;
-}
+// static vector<int> gerar_solucao_aleatoria_mochila(size_t num_itens) 
+// {
+//     vector<int> solucao(num_itens);
+//     random_device rd;
+//     mt19937 gen(rd());
+//     uniform_int_distribution<> dis(0, 1);
+//     for(size_t i = 0; i < num_itens; ++i) { 
+//         solucao[i] = dis(gen);
+//     }
+//     return solucao;
+// }
 
 static vector<int> gerar_solucao_gulosa_mochila(const vector<Item>& itens, int capacidade)
 {
@@ -120,22 +120,28 @@ int simulated_annealing_mochila(const vector<Item>& itens, int capacidade, doubl
     uniform_real_distribution<> dis(0.0, 1.0);
     uniform_int_distribution<> index_dist(0, num_itens - 1);
 
-    vector<int> solucao_atual = gerar_solucao_aleatoria_mochila(num_itens);
+    vector<int> solucao_atual = gerar_solucao_gulosa_mochila(itens, capacidade);
     int valor_atual = avaliar_solucao(solucao_atual, itens, capacidade).first;
     vector<int> melhor_solucao = solucao_atual;
     int melhor_valor = valor_atual;
 
     while (temperatura > temperatura_final) {
-        for (int i = 0; i < 100; ++i) {
+        for (int i = 0; i < 250; ++i) {
             vector<int> vizinho = solucao_atual;
             int pos_flip = index_dist(gen);
             vizinho[pos_flip] = 1 - vizinho[pos_flip];
             int valor_vizinho = avaliar_solucao(vizinho, itens, capacidade).first;
             double delta_valor = valor_vizinho - valor_atual;
 
-            if (delta_valor > 0 || dis(gen) < exp(delta_valor / temperatura)) {
+            if (delta_valor > 0) {
                 solucao_atual = vizinho;
                 valor_atual = valor_vizinho;
+            } else if (delta_valor < 0) {
+                // Aceita piora (ex: 15000 -> 14000) com base na probabilidade
+                if (dis(gen) < exp(delta_valor / temperatura)) {
+                    solucao_atual = vizinho;
+                    valor_atual = valor_vizinho;
+                }
             }
             if (valor_atual > melhor_valor) {
                 melhor_solucao = solucao_atual;
@@ -273,6 +279,18 @@ void executar_testes_mochila(const string& nome_arquivo) {
     vector<Item> itens = ler_arquivo_mochila(nome_arquivo, capacidade);
     if (itens.empty()) return;
 
+    // Extrair nome base para arquivos CSV
+    string nome_base_arquivo = nome_arquivo;
+    size_t last_slash = nome_base_arquivo.find_last_of("/\\");
+    if (last_slash != string::npos) {
+        nome_base_arquivo = nome_base_arquivo.substr(last_slash + 1);
+    }
+    size_t last_dot = nome_base_arquivo.find_last_of(".");
+    if (last_dot != string::npos) {
+        nome_base_arquivo = nome_base_arquivo.substr(0, last_dot);
+    }
+
+
     cout << "\n=====================================================" << endl;
     cout << "EXECUTANDO TESTES PARA A MOCHILA (Instancia: " << nome_arquivo << ")" << endl;
     cout << "=====================================================\n" << endl;
@@ -283,11 +301,15 @@ void executar_testes_mochila(const string& nome_arquivo) {
     // --- 1. Testes do Simulated Annealing ---
     cout << "--- 1. Simulated Annealing (Mochila) ---" << endl;
     vector<pair<string, pair<double, double>>> configs_sa = {
-        {"Temp: 10000.0, Taxa: 0.8", {10000.0, 0.8}},
-        {"Temp: 20000.0, Taxa: 0.9", {20000.0, 0.9}}
+        {"Temp_1000000_Taxa_08", {1000000.0, 0.8}}, 
+        {"Temp_2000000_Taxa_09", {2000000.0, 0.9}}
     };
 
-    for (auto const& config : configs_sa) {
+    for (int config_idx = 0; config_idx < configs_sa.size(); ++config_idx) {
+        auto const& config = configs_sa[config_idx];
+        string nome_csv_sa = nome_base_arquivo + "_mochila_SA_" + config.first + ".csv";
+        ofstream arquivo_csv_sa = abrir_csv(nome_csv_sa, {"Execucao", "Valor", "Tempo_s"});
+
         vector<double> resultados;
         vector<double> tempos;
         for (int i = 0; i < NUM_EXECUCOES; ++i) {
@@ -297,37 +319,67 @@ void executar_testes_mochila(const string& nome_arquivo) {
             duration<double> duracao = fim - inicio;
             resultados.push_back(valor);
             tempos.push_back(duracao.count());
+
+            if (arquivo_csv_sa.is_open()) {
+                escrever_linha_csv(arquivo_csv_sa, i + 1, valor, duracao.count());
+            }
         }
+        if (arquivo_csv_sa.is_open()) arquivo_csv_sa.close();
+
         double melhor = *max_element(resultados.begin(), resultados.end());
         double pior = *min_element(resultados.begin(), resultados.end());
         double media = accumulate(resultados.begin(), resultados.end(), 0.0) / NUM_EXECUCOES;
         double tempo_medio = accumulate(tempos.begin(), tempos.end(), 0.0) / NUM_EXECUCOES;
-        imprimir_tabela_estocastica(config.first, {melhor, pior, media, tempo_medio}, METRICA);
+
+        string config_nome_imprimir = config.first;
+        replace(config_nome_imprimir.begin(), config_nome_imprimir.end(), '_', ' ');
+        replace(config_nome_imprimir.begin(), config_nome_imprimir.end(), ':', ' ');
+        imprimir_tabela_estocastica(config_nome_imprimir, {melhor, pior, media, tempo_medio}, METRICA);
+
     }
 
     // --- 2. Testes da Busca Tabu ---
     cout << "\n--- 2. Busca Tabu (Mochila) ---" << endl;
     vector<pair<string, pair<int, int>>> configs_ts = {
-        {"Duracao Tabu: 7, Iter s/ melhora: 50", {7, 50}},
-        {"Duracao Tabu: 15, Iter s/ melhora: 100", {15, 100}}
+        {"Duracao_7_Iter_50", {7, 50}},
+        {"Duracao_15_Iter_100", {15, 100}}
     };
 
     for (auto const& config : configs_ts) {
+        string nome_csv_ts = nome_base_arquivo + "_mochila_TS_" + config.first + ".csv";
+        ofstream arquivo_csv_ts = abrir_csv(nome_csv_ts, {"Valor_Final", "Tempo_s"});
+
         auto inicio = high_resolution_clock::now();
         double valor = busca_tabu_mochila(itens, capacidade, config.second.first, config.second.second);
         auto fim = high_resolution_clock::now();
         duration<double> duracao = fim - inicio;
-        imprimir_tabela_deterministica(config.first, {valor, duracao.count()}, METRICA);
+
+
+        if (arquivo_csv_ts.is_open()) {
+            escrever_linha_csv(arquivo_csv_ts, valor, duracao.count());
+            arquivo_csv_ts.close();
+        }
+
+
+        string config_nome_imprimir = config.first;
+        replace(config_nome_imprimir.begin(), config_nome_imprimir.end(), '_', ' ');
+        replace(config_nome_imprimir.begin(), config_nome_imprimir.end(), ':', ' ');
+        imprimir_tabela_deterministica(config_nome_imprimir, {valor, duracao.count()}, METRICA);
     }
 
     // --- 3. Testes do GRASP ---
     cout << "\n--- 3. GRASP (Mochila) ---" << endl;
     vector<pair<string, pair<double, int>>> configs_grasp = {
-        {"Alpha: 0.3, Iter GRASP: 20", {0.3, 20}},
-        {"Alpha: 0.5, Iter GRASP: 50", {0.5, 50}}
+        {"Alpha_03_Iter_20", {0.3, 20}},
+        {"Alpha_05_Iter_50", {0.5, 50}}
     };
 
-    for (auto const& config : configs_grasp) {
+    for (int config_idx = 0; config_idx < configs_grasp.size(); ++config_idx) {
+        auto const& config = configs_grasp[config_idx];
+        string nome_csv_grasp = nome_base_arquivo + "_mochila_GRASP_" + config.first + ".csv";
+        ofstream arquivo_csv_grasp = abrir_csv(nome_csv_grasp, {"Execucao", "Valor", "Tempo_s"});
+
+
         vector<double> resultados;
         vector<double> tempos;
         for (int i = 0; i < NUM_EXECUCOES; ++i) {
@@ -337,11 +389,20 @@ void executar_testes_mochila(const string& nome_arquivo) {
             duration<double> duracao = fim - inicio;
             resultados.push_back(valor);
             tempos.push_back(duracao.count());
+            // Escrever no CSV
+            if (arquivo_csv_grasp.is_open()) {
+                 escrever_linha_csv(arquivo_csv_grasp, i + 1, valor, duracao.count());
+            }
         }
+         if (arquivo_csv_grasp.is_open()) arquivo_csv_grasp.close(); 
+
         double melhor = *max_element(resultados.begin(), resultados.end());
         double pior = *min_element(resultados.begin(), resultados.end());
         double media = accumulate(resultados.begin(), resultados.end(), 0.0) / NUM_EXECUCOES;
         double tempo_medio = accumulate(tempos.begin(), tempos.end(), 0.0) / NUM_EXECUCOES;
-        imprimir_tabela_estocastica(config.first, {melhor, pior, media, tempo_medio}, METRICA);
+        string config_nome_imprimir = config.first;
+        replace(config_nome_imprimir.begin(), config_nome_imprimir.end(), '_', ' ');
+        replace(config_nome_imprimir.begin(), config_nome_imprimir.end(), ':', ' ');
+        imprimir_tabela_estocastica(config_nome_imprimir, {melhor, pior, media, tempo_medio}, METRICA);
     }
 }
